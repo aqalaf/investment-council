@@ -1,53 +1,125 @@
-# Council
+# Council — Three investment minds
 
-A private research dashboard for three AI investment analysts: business quality, valuation, and risk. The mandate is US-listed common stocks, a 3–5 year horizon, and moderate risk.
+An AI research dashboard that brings three perspectives to US stocks: **business quality, valuation, and risk**. Built for a **3–5 year investing horizon** and a **moderate-risk mandate**.
 
-## Use
+Council gathers research, lets its analysts challenge one another, and presents a combined view with sources and visible disagreements. It does not place trades.
 
-Start with **Discover candidates** for a focused search across sectors, or **Compare symbols** for 1–8 tickers. The council gathers independent research, then each analyst reviews the others and submits revised views. The shortlist preserves dissent and allows insufficient evidence. It never places trades.
+## Meet the council
 
-All roles currently use `gpt-6-astra`. Separate roles are not independent model diversity. A unanimous vote is not a calibrated probability or proof of investment quality. Discovery is not an exhaustive market screen.
+| Analyst | Focus |
+| --- | --- |
+| The Fundamentalist | Competitive advantages, cash generation, business durability, and growth |
+| The Valuer | Price assumptions, valuation scenarios, and margin of safety |
+| The Skeptic | Balance-sheet resilience, downside scenarios, and reasons the thesis could fail |
 
-## Project contents
+The three roles use the same underlying model by default. Different prompts do not create independent model diversity, and agreement is not proof that a conclusion is correct.
 
-- `app/`: dashboard, authenticated research endpoint, and connection status endpoint.
-- `lib/council.ts`: three analysts, research tools, debate sequence, and rate-limit handling.
-- `lib/council-types.ts`: stock validation and deterministic shortlist rules.
-- `components/`, `build/`, `scripts/`: interface primitives and build/runtime support.
-- `package-lock.json`: reproducible dependency versions.
+## Use the dashboard
 
-## Local setup
+1. Choose **Discover candidates** for a focused search across US sectors, or **Compare symbols** to enter 1–8 comma-separated symbols, such as `MSFT, V, BRK.B`.
+2. Click **Convene council**. Research uses your OpenAI API account and incurs API charges.
+3. Watch the reports and discussion in **Council room**.
+4. Review **Shortlist** for each stock's combined view, supporting arguments, risks, and what would change the analysts' minds.
+5. Open **Sources** and check the original evidence before acting.
 
-Requires Node 22.13+ and npm.
+Discovery searches for a small set of candidates; it does not screen the entire US market. Results stay in the current page only. Refreshing or starting another session replaces them.
+
+## Run locally
+
+### Requirements
+
+- Node.js 22.13 or later and npm.
+- An OpenAI API key with available credits and access to the configured model and web search.
+- A local development environment capable of running the included Cloudflare/Vinext tooling.
+
+### Install
 
 ```sh
+git clone https://github.com/aqalaf/investment-council.git
+cd investment-council
 npm ci
 cp .env.example .env.local
+```
+
+Open `.env.local` in your local editor and set `OPENAI_API_KEY` to your own key. Keep that file private; it is ignored by Git. The optional `OPENAI_MODEL` setting defaults to `gpt-6-astra`. Any replacement model must support the research tools and structured outputs used by this app.
+
+Then start the dashboard:
+
+```sh
 npm run dev
 ```
 
-Configure the key in `.env.local` before running research. The local preview uses the starter’s local sign-in flow. A server-side `OPENAI_API_KEY` is required in the ignored `.env.local`; optional `OPENAI_MODEL` overrides the default. Never expose the key in browser code or commit it. API usage is billed separately by OpenAI.
+Open **http://localhost:5173**. If the app requests sign-in, use the starter's local sign-in flow at **http://localhost:5173/signin-with-chatgpt**. Local development uses a mock identity; it is not production authentication.
 
-For a production build, run `npm run build`. The server output is Cloudflare Worker compatible. Sites owns production authentication and private audience controls. Set `OPENAI_API_KEY` as a Sites secret before deploying; a local env file does not configure the hosted site.
+### Check and build
 
-## Decision rules
+```sh
+npx tsc --noEmit
+npm run build
+```
 
-A research candidate requires three supportive verdicts, source links from the actual search citations, a positive USD quote with a supporting cited URL and a date within seven days, and no material risk objection. Missing evidence blocks a candidate classification. A risk veto produces Pass. Valuation ranges are AI estimates with assumptions, not forecasts.
+The build generates a Cloudflare Worker-compatible server. This application needs a backend and cannot run its AI features on static GitHub Pages.
 
-The evidence comes from web research, not a licensed real-time price feed. Dates, accounting periods, source reliability, valuation assumptions, and model conclusions require human review. Views are saved only in page memory and disappear when refreshed or replaced by a new session.
+## Deploy with ChatGPT Sites
 
-## Verification and current blockers
+The source repository and hosted runtime are separate. Cloning or publishing this repository does not copy credentials or grant access to the existing deployment.
 
-- TypeScript checks and production build passed.
-- Symbol normalization, invalid-input rejection, agreement, stale-evidence handling, missing quote sources, and risk veto checked.
-- Browser tabs and WebMCP staging/readback checked, including invalid input without changing the selected symbols.
-- API authentication and model availability verified.
-- After credits were added, a complete live MSFT research/debate test passed: three research reports, three revised ballots, cited sources, and a combined verdict.
-- Requests were reduced and research runs sequentially to fit the account’s token limits. Rate-limit errors wait before bounded retries; billing and other errors are not retried.
-- The dashboard is privately published. The temporary publishing credential was explicitly authorized. Hosted API-secret setup remains incomplete; a proposed transfer exposing private key material was rejected and was not executed. The working API key remains in the local ignored env file.
+1. Create your own Site using the Sites workflow. The existing `.openai/hosting.json` links the original deployment; when deploying your own copy, have the workflow replace that linkage with your own Site's project ID. Do not reuse the original project's ID.
+2. Open [ChatGPT Sites](https://chatgpt.com/sites), find your Site, and select **More actions → Settings**.
+3. Add `OPENAI_API_KEY` as a **secret** environment variable. Optionally configure `OPENAI_MODEL`.
+4. Save the settings and deploy a saved version to apply the new environment configuration.
+5. Test one symbol before starting broader research.
 
-## GitHub and hosting
+See the [official Sites documentation](https://learn.chatgpt.com/docs/sites) for hosting and environment settings.
 
-GitHub stores this project’s source. The app requires a server runtime and cannot run its AI backend on static GitHub Pages. The existing private Sites deployment remains separate. Its server-side API secret still needs configuration; publishing the code to GitHub does not transfer that secret.
+A local `.env.local` does not configure hosted secrets. Never put a key in `.openai/hosting.json`, client code, an issue, or a commit.
 
-Environment files, credentials, generated builds, dependencies, and scratch files are excluded. `.env.example` contains names only, never a key. Preserve the bundled third-party license files.
+Production authentication relies on trusted identity headers supplied by Sites. If adapting the app to another hosting provider, implement and verify authentication there before exposing the research endpoint. Do not trust user-supplied identity headers.
+
+## How decisions work
+
+Research runs sequentially to reduce bursts of API usage. Each analyst produces an initial report, then reviews the shared research and earlier debate responses before submitting a revised view.
+
+A stock qualifies for further research only when it has:
+
+- Three supportive analyst verdicts.
+- Supporting source citations.
+- A positive USD price with a cited source and a date within seven days.
+- No material objection from the risk analyst.
+
+Missing evidence prevents a favorable classification. A material risk objection produces **Pass**. Fair-value ranges, when available, are scenario estimates rather than price forecasts.
+
+## Troubleshooting
+
+| Message or symptom | What to check |
+| --- | --- |
+| AI connection is not configured | Set the server-side key. For Sites, save the secret and redeploy. |
+| AI key was rejected | Check or replace the key in the runtime's secret settings. |
+| No available API credits | Check the API project's billing and available credits. |
+| Rate limit reached | Wait before retrying; the app already performs bounded retries for temporary rate limits. |
+| Model unavailable | Confirm the API project can access the configured model. |
+| Sign-in required | Complete the appropriate local or hosted sign-in flow. |
+| Session stopped or timed out | Start a smaller comparison. Partial reports are not a completed council result. |
+
+## Project map
+
+| Path | Purpose |
+| --- | --- |
+| `app/page.tsx` | Dashboard and session UI |
+| `app/api/council/route.ts` | Authenticated research endpoint and streamed events |
+| `app/api/health/route.ts` | Sign-in and key-presence checks |
+| `app/chatgpt-auth.ts` | Sites identity integration |
+| `lib/council.ts` | Analyst prompts, web research, debate, and retry handling |
+| `lib/council-types.ts` | Input validation and combined decision rules |
+| `components/ui/` | UI components |
+| `build/`, `scripts/` | Development and hosting support |
+
+Built with React, TypeScript, Vinext, Cloudflare Workers, and the OpenAI Agents SDK.
+
+## Limitations and responsible use
+
+This is a research aid, not personalized financial advice or an automated trading system. It does not assess your full financial circumstances.
+
+Web research is not a licensed real-time market feed. Prices may be delayed, sources may be incomplete, and AI-generated facts, calculations, and interpretations can be wrong. Verify dates, financial statements, assumptions, and citations independently. “Moderate risk” is a research instruction, not a guarantee against losses.
+
+The repository contains source code, not access to the maintainer's API account or hosted workspace. Anyone running a copy must provide their own credentials. Preserve the bundled third-party license notices.
